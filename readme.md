@@ -1,7 +1,8 @@
 
 # Log Classification With Hybrid Classification Framework
 
-This project implements a hybrid log classification system, combining three complementary approaches to handle varying levels of complexity in log patterns. The classification methods ensure flexibility and effectiveness in processing predictable, complex, and poorly-labeled data patterns.
+This project implements a hybrid log classification system, combining three  approaches to handle varying levels of complexity in log patterns. 
+The classification methods ensure flexibility and effectiveness in processing predictable, complex, and poorly-labeled data patterns.
 
 ---
 
@@ -71,12 +72,3 @@ Upload a CSV file containing logs to the FastAPI endpoint for classification. En
 
 The output will be a CSV file with an additional column `target_label`, which represents the classified label for each log entry.
 
----
-
-## Disclaimer
-
-**Copyrights Reserved**:  
-@Codebasics Inc  
-@LearnerX Pvt Ltd  
-
-This project, including its code and resources, is intended solely for educational purposes and should not be used for any commercial purposes without proper authorization.
