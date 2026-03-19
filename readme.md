@@ -29,6 +29,7 @@ The classification methods ensure flexibility and effectiveness in processing pr
 1. **`training/`**:
    - Contains the code for training models using Sentence Transformer and Logistic Regression.
    - Includes the code for regex-based classification.
+   - Includes demo log messages to feed as input
 
 2. **`models/`**:
    - Stores the saved models, including Sentence Transformer embeddings and the Logistic Regression model.
