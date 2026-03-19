@@ -57,7 +57,200 @@ The classification methods ensure flexibility and effectiveness in processing pr
    ```bash
    uvicorn server:app --reload
    ```
+# Log Classification System
 
+A three-stage classification pipeline for production logs — combining regex rules, embedding-based ML, and an LLM fallback. Designed to be fast, cost-aware, and reliable on noisy real-world log data.
+
+---
+
+## Overview
+
+Classifying logs at scale is harder than it looks. Regex alone breaks on anything slightly malformed. Pure ML requires clean training data and struggles with rare log patterns. LLMs are accurate but expensive to call on every record.
+
+This system chains all three approaches in order of speed and cost:
+
+1. Regex handles the easy, predictable cases instantly
+2. A trained ML classifier (SentenceTransformer + sklearn) covers the majority of remaining logs
+3. Groq-hosted LLaMA steps in only when the ML model's confidence falls below a threshold
+
+The result is a pipeline that's fast on common cases, accurate on edge cases, and doesn't burn API credits on logs it can already classify confidently.
+
+---
+
+## Architecture
+
+```
+Raw Log Input (CSV)
+        │
+        ▼
+┌───────────────────┐
+│   Regex Classifier │  ◄── Pattern-matched rules (fast, deterministic)
+└────────┬──────────┘
+         │ No match
+         ▼
+┌────────────────────────────────┐
+│  SentenceTransformer + sklearn  │  ◄── Embedding-based ML classifier
+└────────┬───────────────────────┘
+         │ Low confidence
+         ▼
+┌──────────────────────┐
+│  LLM Fallback (Groq)  │  ◄── LLaMA via Groq API (called sparingly)
+└────────┬─────────────┘
+         │
+         ▼
+  Classified Output (CSV / API response)
+```
+
+Each stage only receives logs that the previous stage could not handle with sufficient confidence. The LLM is a last resort, not the default.
+
+---
+
+## Tech Stack
+
+| Component | Tool |
+|-----------|------|
+| API server | FastAPI |
+| Embeddings | SentenceTransformers (`all-MiniLM-L6-v2`) |
+| ML classifier | scikit-learn |
+| LLM fallback | Groq API + LLaMA 3 |
+| Data handling | pandas |
+| Language | Python 3.10+ |
+
+---
+
+## How It Works
+
+**Stage 1 — Regex classifier**
+
+A set of hand-written patterns covers log types that follow predictable formats (e.g. HTTP status codes, known error strings, standard prefixes). If a log matches a pattern, it's classified immediately and exits the pipeline.
+
+**Stage 2 — ML classifier**
+
+Logs that don't match any regex pattern are encoded using a SentenceTransformer model. The resulting embeddings are passed to a trained sklearn classifier (e.g. LogisticRegression or SVM). If the predicted class probability exceeds a confidence threshold, the classification is accepted.
+
+**Stage 3 — LLM fallback**
+
+Logs where the ML model's confidence is below the threshold are sent to LLaMA 3 via the Groq API with a structured prompt. The LLM returns a category label, which is recorded along with a flag indicating it came from the fallback stage.
+
+**Output**
+
+Each log gets a predicted class, the stage that classified it (regex / ml / llm), and — for ML predictions — a confidence score. Results are returned via API or written to a CSV.
+
+---
+
+## API Usage
+
+**Start the server**
+```bash
+uvicorn app:app --reload
+```
+
+**`POST /classify`**
+
+Upload a CSV file containing a `log_message` column.
+
+```bash
+curl -X POST "http://localhost:8000/classify" \
+     -F "file=@logs.csv"
+```
+
+**Response**
+
+```json
+{
+  "results": [
+    {
+      "log_message": "Connection timeout after 30s on port 443",
+      "predicted_class": "network_error",
+      "stage": "ml",
+      "confidence": 0.91
+    },
+    {
+      "log_message": "Unrecognized kernel panic variant: 0x0000007E",
+      "predicted_class": "system_fault",
+      "stage": "llm",
+      "confidence": null
+    }
+  ]
+}
+```
+
+---
+
+## Setup
+
+**1. Clone the repo**
+```bash
+git clone https://github.com/your-username/log-classifier.git
+cd log-classifier
+```
+
+**2. Install dependencies**
+```bash
+pip install -r requirements.txt
+```
+
+**3. Set your Groq API key**
+```bash
+export GROQ_API_KEY=your_key_here
+```
+
+**4. Train the ML classifier** (if not using a pre-trained checkpoint)
+```bash
+python train.py
+```
+
+**5. Start the API**
+```bash
+uvicorn app:app --reload
+```
+
+---
+
+## Example Input / Output
+
+**Input CSV (`logs.csv`)**
+
+```
+log_message
+"GET /api/v1/users 200 OK"
+"NullPointerException at line 42 in UserService.java"
+"disk usage at 98% on /dev/sda1"
+"Unrecognized auth token format: bearer_xyz_9182"
+```
+
+**Output**
+
+```
+log_message                                              predicted_class     stage   confidence
+GET /api/v1/users 200 OK                                 http_success        regex   —
+NullPointerException at line 42 in UserService.java      application_error   ml      0.94
+disk usage at 98% on /dev/sda1                           infra_warning       ml      0.87
+Unrecognized auth token format: bearer_xyz_9182          auth_error          llm     —
+```
+
+---
+
+## Requirements
+
+```
+fastapi
+uvicorn
+sentence-transformers
+scikit-learn
+pandas
+groq
+```
+
+---
+
+## Future Improvements
+
+- Active learning loop — flag low-confidence LLM outputs for human review and use them to retrain the ML model over time
+- Confidence threshold tuning per log category rather than a single global threshold
+- Async Groq calls to reduce latency when multiple logs hit the LLM stage simultaneously
+- Support for streaming log input (Kafka / file tail) instead of batch CSV only
+- Persist classification metadata to a database for downstream monitoring and alerting
    Once the server is running, you can access the API at:
    - `http://127.0.0.1:8000/` (Main endpoint)
    - `http://127.0.0.1:8000/docs` (Interactive Swagger documentation)
